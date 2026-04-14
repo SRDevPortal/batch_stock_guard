@@ -1,28 +1,31 @@
 [project]
 name = "batch_stock_guard"
-authors = [
-    { name = "Antigravity", email = "antigravity@example.com"}
-]
+version = "0.0.1"
 description = "Allows negative stock at batch level while blocking it at item total level"
-requires-python = ">=3.10"
+authors = [
+    { name = "SRIAAS", email = "admin@example.com"}
+]
+
 readme = "README.md"
-dynamic = ["version"]
+requires-python = ">=3.10"
+
 dependencies = [
-    # "frappe~=15.0.0" # Installed and managed by bench.
+    # "frappe~=15.0.0"  # Installed and managed by bench
 ]
 
 [build-system]
 requires = ["flit_core >=3.4,<4"]
 build-backend = "flit_core.buildapi"
 
+# Frappe compatibility requirement
+[tool.bench.frappe-dependencies]
+frappe = ">=15.0.0,<16.0.0"
+
 # These dependencies are only installed when developer mode is enabled
 [tool.bench.dev-dependencies]
 # package_name = "~=1.1.0"
 
-# These apt dependencies will be installed from Ubuntu repositories when you host your app on Frappe Cloud
-[deploy.dependencies.apt]
-packages = []
-
+# Ruff configuration for linting
 [tool.ruff]
 line-length = 110
 target-version = "py310"
@@ -37,6 +40,7 @@ select = [
     "B",
     "RUF",
 ]
+
 ignore = [
     "B017", # assertRaises(Exception) - should be more specific
     "B018", # useless expression, not assigned to anything
@@ -52,6 +56,7 @@ ignore = [
     "F722", # syntax error in forward type annotation
     "W191", # indentation contains tabs
 ]
+
 typing-modules = ["frappe.types.DF"]
 
 [tool.ruff.format]
