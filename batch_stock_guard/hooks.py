@@ -43,7 +43,10 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Stock Entry": "public/js/stock_entry.js",
+	"Sales Invoice": "public/js/sales_invoice.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -83,7 +86,7 @@ app_license = "mit"
 # ------------
 
 # before_install = "batch_stock_guard.install.before_install"
-# after_install = "batch_stock_guard.install.after_install"
+after_install = "batch_stock_guard.batch_stock_guard.setup.after_install"
 
 # Uninstallation
 # ------------
@@ -132,18 +135,19 @@ app_license = "mit"
 # override_doctype_class = {
 # 	"ToDo": "custom_app.overrides.CustomToDo"
 # }
+override_doctype_class = {
+	"Serial and Batch Bundle": "batch_stock_guard.batch_stock_guard.overrides.serial_and_batch_bundle.BatchStockGuardSerialAndBatchBundle"
+}
 
 # Document Events
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Stock Ledger Entry": {
+		"before_insert": "batch_stock_guard.batch_stock_guard.logic.stock_guard.validate_total_stock"
+	}
+}
 
 # Scheduled Tasks
 # ---------------
@@ -246,4 +250,3 @@ app_license = "mit"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-
