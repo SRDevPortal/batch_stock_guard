@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-import inspect
 
 import frappe
-from frappe import _
 from frappe.utils import getdate, today
 
+from batch_stock_guard.batch_stock_guard.compat import call_with_supported_kwargs
 from erpnext.stock.doctype.batch.batch import get_batch_qty
-
-
-GET_BATCH_QTY_PARAMS = set(inspect.signature(get_batch_qty).parameters)
 
 
 @frappe.whitelist()
@@ -54,7 +50,7 @@ def get_batch_no_for_sales_invoice(doctype, txt, searchfield, start, page_len, f
 			"consider_negative_batches": True,
 			"ignore_reserved_stock": True,
 		}
-		qty = get_batch_qty(**{key: value for key, value in qty_args.items() if key in GET_BATCH_QTY_PARAMS})
+		qty = call_with_supported_kwargs(get_batch_qty, **qty_args)
 
 		results[batch.name] = (
 			batch.name,
