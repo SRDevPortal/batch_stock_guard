@@ -1,5 +1,6 @@
 import frappe
 
+
 def after_install():
     """
     1. Enables 'Allow Negative Stock' in Stock Settings.
@@ -10,7 +11,7 @@ def after_install():
 
 def enable_negative_stock():
     frappe.db.set_single_value("Stock Settings", "allow_negative_stock", 1)
-    print("  ✓ Allow Negative Stock enabled in Stock Settings")
+
 
 def cleanup_old_scripts():
     scripts_to_delete = {
@@ -22,4 +23,3 @@ def cleanup_old_scripts():
         for name in names:
             if frappe.db.exists(doctype, name):
                 frappe.delete_doc(doctype, name)
-                print(f"  ✓ Deleted legacy {doctype}: {name}")
