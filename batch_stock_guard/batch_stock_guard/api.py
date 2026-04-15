@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+import inspect
 
 import frappe
 from frappe import _
 from frappe.utils import getdate, today
 
 from erpnext.stock.doctype.batch.batch import get_batch_qty
+
+
+GET_BATCH_QTY_PARAMS = set(inspect.signature(get_batch_qty).parameters)
 
 
 @frappe.whitelist()
@@ -41,15 +45,16 @@ def get_batch_no_for_sales_invoice(doctype, txt, searchfield, start, page_len, f
 		if batch.expiry_date and getdate(batch.expiry_date) < getdate(expiry_date):
 			continue
 
-		qty = get_batch_qty(
-			batch_no=batch.name,
-			warehouse=filters.get("warehouse"),
-			item_code=filters.get("item_code"),
-			posting_date=filters.get("posting_date"),
-			posting_time=filters.get("posting_time"),
-			consider_negative_batches=True,
-			ignore_reserved_stock=True,
-		)
+		qty_args = {
+			"batch_no": batch.name,
+			"warehouse": filters.get("warehouse"),
+			"item_code": filters.get("item_code"),
+			"posting_date": filters.get("posting_date"),
+			"posting_time": filters.get("posting_time"),
+			"consider_negative_batches": True,
+			"ignore_reserved_stock": True,
+		}
+		qty = get_batch_qty(**{key: value for key, value in qty_args.items() if key in GET_BATCH_QTY_PARAMS})
 
 		results[batch.name] = (
 			batch.name,
