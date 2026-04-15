@@ -4,6 +4,8 @@ from frappe.utils import flt
 
 def apply():
     from erpnext.stock import serial_batch_bundle as sbb
+    from erpnext.stock.doctype.batch.batch import get_available_batches
+    from collections import defaultdict
 
     if getattr(sbb.update_batch_qty, "_batch_stock_guard_patched", False):
         return
@@ -28,7 +30,7 @@ def apply():
     def patched_update_batch_qty(
         voucher_type, voucher_no, docstatus=None, via_landed_cost_voucher=False
     ):
-        resolved_docstatus, positional_via_landed_cost_voucher = _resolve_docstatus(
+        _resolved_docstatus, positional_via_landed_cost_voucher = _resolve_docstatus(
             voucher_type, voucher_no, docstatus
         )
         if positional_via_landed_cost_voucher is not None:
@@ -41,44 +43,59 @@ def apply():
                 via_landed_cost_voucher=via_landed_cost_voucher,
             )
 
-        batches = sbb.get_batchwise_qty(voucher_type, voucher_no)
+        batches = sbb.get_distinct_batches(voucher_type, voucher_no)
         if not batches:
             return
 
         precision = frappe.get_precision("Batch", "batch_qty")
+        batch_data = get_available_batches(
+            frappe._dict(
+                {"batch_no": batches, "consider_negative_batches": 1, "based_on_warehouse": True}
+            )
+        )
+        batchwise_qty = defaultdict(float)
+
         bundle_rows = frappe.get_all(
             "Serial and Batch Bundle",
             filters={"voucher_type": voucher_type, "voucher_no": voucher_no},
             fields=["name", "item_code", "company", "warehouse"],
         )
-        item_company_by_bundle = {row.name: row for row in bundle_rows}
+        bundle_by_name = {row.name: row for row in bundle_rows}
 
-        batch_to_context = {}
+        batch_context_by_key = {}
         entry_rows = frappe.get_all(
             "Serial and Batch Entry",
-            filters={"parent": ("in", list(item_company_by_bundle.keys()))},
+            filters={"parent": ("in", list(bundle_by_name.keys()))},
             fields=["parent", "batch_no"],
         )
         for row in entry_rows:
-            if row.batch_no and row.parent in item_company_by_bundle and row.batch_no not in batch_to_context:
-                batch_to_context[row.batch_no] = item_company_by_bundle[row.parent]
+            if not row.batch_no or row.parent not in bundle_by_name:
+                continue
 
-        for batch, qty in batches.items():
-            current_qty = sbb.get_batch_current_qty(batch)
-            current_qty += flt(qty, precision) * (-1 if resolved_docstatus == 2 else 1)
+            context = bundle_by_name[row.parent]
+            batch_context_by_key.setdefault((row.batch_no, context.warehouse), context)
 
-            if current_qty < 0:
-                context = batch_to_context.get(batch)
-                if context:
-                    from batch_stock_guard.batch_stock_guard.logic.stock_guard import get_total_stock
+        for (batch_no, warehouse), qty in batch_data.items():
+            qty = flt(qty, precision)
+            batchwise_qty[batch_no] += qty
 
-                    total_stock = get_total_stock(context.item_code, company=context.company)
-                    if total_stock < 0:
-                        _throw_negative_batch_validation(batch, context.warehouse, current_qty)
-                else:
-                    _throw_negative_batch_validation(batch, None, current_qty)
+            if qty >= 0:
+                continue
 
-            frappe.db.set_value("Batch", batch, "batch_qty", current_qty)
+            context = batch_context_by_key.get((batch_no, warehouse))
+            if not context:
+                _throw_negative_batch_validation(batch_no, warehouse, qty)
+                continue
+
+            from batch_stock_guard.batch_stock_guard.logic.stock_guard import get_total_stock
+
+            total_stock = get_total_stock(context.item_code, company=context.company)
+            if total_stock < 0:
+                _throw_negative_batch_validation(batch_no, warehouse, qty)
+
+        for batch_no in batches:
+            qty = flt(batchwise_qty.get(batch_no, 0), precision)
+            frappe.db.set_value("Batch", batch_no, "batch_qty", qty)
 
     patched_update_batch_qty._batch_stock_guard_patched = True
     sbb.update_batch_qty = patched_update_batch_qty
