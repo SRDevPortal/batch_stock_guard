@@ -103,13 +103,19 @@ def apply():
 
             context = batch_context_by_key.get((batch_no, warehouse))
             if not context:
-                _throw_negative_batch_validation(batch_no, warehouse, qty)
+                # Ignore negative balances for the same batch in warehouses that are
+                # unrelated to the current voucher. The current rule only cares about
+                # the item's projected stock in the voucher's selected warehouse.
                 continue
 
             from batch_stock_guard.batch_stock_guard.logic.stock_guard import get_total_stock
 
-            total_stock = get_total_stock(context.item_code, company=context.company)
-            if total_stock < 0:
+            warehouse_stock = get_total_stock(
+                context.item_code,
+                company=context.company,
+                warehouse=warehouse,
+            )
+            if warehouse_stock < 0:
                 _throw_negative_batch_validation(batch_no, warehouse, qty)
 
         for batch_no in batches:
