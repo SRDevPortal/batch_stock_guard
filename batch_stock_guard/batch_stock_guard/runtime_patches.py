@@ -10,12 +10,34 @@ def apply():
 
     original_update_batch_qty = sbb.update_batch_qty
 
-    def patched_update_batch_qty(voucher_type, voucher_no, docstatus, via_landed_cost_voucher=False):
+    def _resolve_docstatus(voucher_type, voucher_no, docstatus):
+        if isinstance(docstatus, bool):
+            return None, docstatus
+
+        if docstatus is None:
+            docstatus = frappe.db.get_value(voucher_type, voucher_no, "docstatus")
+
+        return docstatus, None
+
+    def _throw_negative_batch_validation(batch_no, warehouse, qty):
+        try:
+            sbb.throw_negative_batch_validation(batch_no, warehouse, qty)
+        except TypeError:
+            sbb.throw_negative_batch_validation(batch_no, qty)
+
+    def patched_update_batch_qty(
+        voucher_type, voucher_no, docstatus=None, via_landed_cost_voucher=False
+    ):
+        resolved_docstatus, positional_via_landed_cost_voucher = _resolve_docstatus(
+            voucher_type, voucher_no, docstatus
+        )
+        if positional_via_landed_cost_voucher is not None:
+            via_landed_cost_voucher = positional_via_landed_cost_voucher
+
         if via_landed_cost_voucher:
             return original_update_batch_qty(
                 voucher_type,
                 voucher_no,
-                docstatus,
                 via_landed_cost_voucher=via_landed_cost_voucher,
             )
 
@@ -27,7 +49,7 @@ def apply():
         bundle_rows = frappe.get_all(
             "Serial and Batch Bundle",
             filters={"voucher_type": voucher_type, "voucher_no": voucher_no},
-            fields=["name", "item_code", "company"],
+            fields=["name", "item_code", "company", "warehouse"],
         )
         item_company_by_bundle = {row.name: row for row in bundle_rows}
 
@@ -43,7 +65,7 @@ def apply():
 
         for batch, qty in batches.items():
             current_qty = sbb.get_batch_current_qty(batch)
-            current_qty += flt(qty, precision) * (-1 if docstatus == 2 else 1)
+            current_qty += flt(qty, precision) * (-1 if resolved_docstatus == 2 else 1)
 
             if current_qty < 0:
                 context = batch_to_context.get(batch)
@@ -52,9 +74,9 @@ def apply():
 
                     total_stock = get_total_stock(context.item_code, company=context.company)
                     if total_stock < 0:
-                        sbb.throw_negative_batch_validation(batch, current_qty)
+                        _throw_negative_batch_validation(batch, context.warehouse, current_qty)
                 else:
-                    sbb.throw_negative_batch_validation(batch, current_qty)
+                    _throw_negative_batch_validation(batch, None, current_qty)
 
             frappe.db.set_value("Batch", batch, "batch_qty", current_qty)
 
