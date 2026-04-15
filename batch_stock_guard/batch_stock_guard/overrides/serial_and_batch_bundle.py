@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 
+from batch_stock_guard.batch_stock_guard.compat import call_with_supported_kwargs
 from erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle import SerialandBatchBundle
 
 from batch_stock_guard.batch_stock_guard.logic.stock_guard import (
@@ -55,9 +56,10 @@ class BatchStockGuardSerialAndBatchBundle(SerialandBatchBundle):
         if self._allow_negative_batch_with_positive_total():
             return
 
-        return super().throw_negative_batch(
-            batch_no,
-            available_qty,
-            precision,
+        return call_with_supported_kwargs(
+            super().throw_negative_batch,
+            batch_no=batch_no,
+            available_qty=available_qty,
+            precision=precision,
             posting_datetime=posting_datetime,
         )
