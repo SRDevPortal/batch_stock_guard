@@ -1,0 +1,134 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-06-25 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "feature_flags_section",
+  "enable_total_stock_guard",
+  "enable_batch_bundle_override_logic",
+  "enable_sales_invoice_valuation_guard",
+  "enable_stock_entry_valuation_guard",
+  "enable_valuation_repair_tools",
+  "enable_client_buttons",
+  "thresholds_section",
+  "stock_value_warning_limit",
+  "stock_value_block_limit",
+  "max_allowed_valuation_rate",
+  "allow_negative_valuation_rate",
+  "logging_section",
+  "log_blocked_transactions"
+ ],
+ "fields": [
+  {
+   "fieldname": "feature_flags_section",
+   "fieldtype": "Section Break",
+   "label": "Feature Flags"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_total_stock_guard",
+   "fieldtype": "Check",
+   "label": "Enable Total Stock Guard"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_batch_bundle_override_logic",
+   "fieldtype": "Check",
+   "label": "Enable Batch Bundle Override Logic"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_sales_invoice_valuation_guard",
+   "fieldtype": "Check",
+   "label": "Enable Sales Invoice Valuation Guard"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_stock_entry_valuation_guard",
+   "fieldtype": "Check",
+   "label": "Enable Stock Entry Valuation Guard"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_valuation_repair_tools",
+   "fieldtype": "Check",
+   "label": "Enable Valuation Repair Tools"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_client_buttons",
+   "fieldtype": "Check",
+   "label": "Enable Client Buttons"
+  },
+  {
+   "fieldname": "thresholds_section",
+   "fieldtype": "Section Break",
+   "label": "Thresholds"
+  },
+  {
+   "default": "900000000000",
+   "fieldname": "stock_value_warning_limit",
+   "fieldtype": "Currency",
+   "label": "Stock Value Warning Limit"
+  },
+  {
+   "default": "990000000000",
+   "fieldname": "stock_value_block_limit",
+   "fieldtype": "Currency",
+   "label": "Stock Value Block Limit"
+  },
+  {
+   "default": "1000000",
+   "fieldname": "max_allowed_valuation_rate",
+   "fieldtype": "Float",
+   "label": "Max Allowed Valuation Rate"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_negative_valuation_rate",
+   "fieldtype": "Check",
+   "label": "Allow Negative Valuation Rate"
+  },
+  {
+   "fieldname": "logging_section",
+   "fieldtype": "Section Break",
+   "label": "Logging"
+  },
+  {
+   "default": "1",
+   "fieldname": "log_blocked_transactions",
+   "fieldtype": "Check",
+   "label": "Log Blocked Transactions"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Batch Stock Guard",
+ "name": "Batch Stock Guard Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Stock Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

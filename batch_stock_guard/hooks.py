@@ -87,6 +87,7 @@ doctype_js = {
 
 # before_install = "batch_stock_guard.install.before_install"
 after_install = "batch_stock_guard.batch_stock_guard.setup.after_install"
+after_migrate = "batch_stock_guard.batch_stock_guard.setup.after_migrate"
 
 # Uninstallation
 # ------------
@@ -144,6 +145,12 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	"Sales Invoice": {
+		"before_submit": "batch_stock_guard.batch_stock_guard.logic.valuation_guard.validate_sales_invoice_stock_valuation",
+	},
+	"Stock Entry": {
+		"before_submit": "batch_stock_guard.batch_stock_guard.logic.valuation_guard.validate_stock_entry_stock_valuation",
+	},
 	"Stock Ledger Entry": {
 		"before_insert": "batch_stock_guard.batch_stock_guard.logic.stock_guard.validate_total_stock"
 	}

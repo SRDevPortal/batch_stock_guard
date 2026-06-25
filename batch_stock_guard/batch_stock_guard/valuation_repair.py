@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from dataclasses import asdict
 from decimal import Decimal
 
 import frappe
 from frappe import _
 from frappe.utils import flt, get_datetime, getdate
+
+from batch_stock_guard.batch_stock_guard.settings import is_enabled
 
 
 SLE_FIELDS = [
@@ -31,6 +34,11 @@ SLE_FIELDS = [
 
 def _ensure_system_manager() -> None:
     frappe.only_for("System Manager")
+
+
+def _ensure_repair_tools_enabled() -> None:
+    if not is_enabled("enable_valuation_repair_tools"):
+        frappe.throw(_("Valuation repair tools are disabled in Batch Stock Guard Settings."))
 
 
 def _as_bool(value) -> bool:
@@ -295,6 +303,7 @@ def _make_rows(rows=None, invoice: str | None = None) -> list[frappe._dict]:
 @frappe.whitelist()
 def preview_bulk_valuation_repair(rows=None, invoice: str | None = None):
     _ensure_system_manager()
+    _ensure_repair_tools_enabled()
     repair_rows = _make_rows(rows=rows, invoice=invoice)
     return [_build_repair_result(row) for row in repair_rows]
 
@@ -309,6 +318,7 @@ def apply_bulk_valuation_repair(
     commit: bool | str = True,
 ):
     _ensure_system_manager()
+    _ensure_repair_tools_enabled()
     if not _as_bool(confirm):
         frappe.throw(_("Set confirm=1 to apply valuation repair. Run preview first."))
 
@@ -339,6 +349,8 @@ def repair_item_valuation(
     enqueue_repost: bool | str = True,
     commit: bool | str = True,
 ):
+    _ensure_system_manager()
+    _ensure_repair_tools_enabled()
     row = {
         "item_code": item_code,
         "warehouse": warehouse,
@@ -355,3 +367,36 @@ def repair_item_valuation(
             commit=commit,
         )
     return preview_bulk_valuation_repair(rows=[row])
+
+
+@frappe.whitelist()
+def preview_invoice_stock_risk(invoice: str):
+    _ensure_system_manager()
+    _ensure_repair_tools_enabled()
+
+    from batch_stock_guard.batch_stock_guard.logic.valuation_guard import inspect_stock_valuation
+
+    doc = frappe.get_doc("Sales Invoice", invoice)
+    return [asdict(issue) for issue in inspect_stock_valuation(doc)]
+
+
+@frappe.whitelist()
+def preview_invoice_valuation_repair(invoice: str):
+    return preview_bulk_valuation_repair(invoice=invoice)
+
+
+@frappe.whitelist()
+def apply_invoice_valuation_repair(
+    invoice: str,
+    confirm: bool | str = False,
+    enqueue_repost: bool | str = True,
+    update_incoming_rate: bool | str = False,
+    commit: bool | str = True,
+):
+    return apply_bulk_valuation_repair(
+        invoice=invoice,
+        confirm=confirm,
+        enqueue_repost=enqueue_repost,
+        update_incoming_rate=update_incoming_rate,
+        commit=commit,
+    )

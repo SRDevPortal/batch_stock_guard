@@ -2,6 +2,8 @@ import frappe
 from frappe import _
 from erpnext.stock.utils import get_combine_datetime
 
+from batch_stock_guard.batch_stock_guard.settings import is_enabled
+
 
 def get_total_stock(item_code, company=None, warehouse=None, posting_date=None, posting_time=None):
     """Return total stock for an item for the given company/warehouse/time slice."""
@@ -93,6 +95,9 @@ def validate_total_stock(doc, method):
     Ensures outgoing stock does not drive the item's total in the
     selected warehouse below zero.
     """
+    if not is_enabled("enable_total_stock_guard"):
+        return
+
     # Only check outgoing quantities - incoming (positive actual_qty) can never push total negative.
     if doc.actual_qty >= 0:
         return

@@ -8,9 +8,13 @@ from batch_stock_guard.batch_stock_guard.logic.stock_guard import (
     get_total_stock,
     throw_warehouse_stock_error,
 )
+from batch_stock_guard.batch_stock_guard.settings import is_enabled
 
 
 class BatchStockGuardSerialAndBatchBundle(SerialandBatchBundle):
+    def _custom_batch_logic_enabled(self):
+        return is_enabled("enable_batch_bundle_override_logic")
+
     def _get_post_transaction_warehouse_stock(self):
         return get_total_stock(
             self.item_code,
@@ -24,6 +28,16 @@ class BatchStockGuardSerialAndBatchBundle(SerialandBatchBundle):
         return self._get_post_transaction_warehouse_stock() >= 0
 
     def validate_negative_batch(self, batch_no, available_qty):
+        if not self._custom_batch_logic_enabled():
+            parent_validate = getattr(super(), "validate_negative_batch", None)
+            if not parent_validate:
+                return
+            return call_with_supported_kwargs(
+                parent_validate,
+                batch_no=batch_no,
+                available_qty=available_qty,
+            )
+
         if available_qty >= 0 or self.is_stock_reco_for_valuation_adjustment(available_qty):
             return
 
@@ -59,6 +73,15 @@ class BatchStockGuardSerialAndBatchBundle(SerialandBatchBundle):
         )
 
     def throw_negative_batch(self, batch_no, available_qty, precision, posting_datetime=None):
+        if not self._custom_batch_logic_enabled():
+            return call_with_supported_kwargs(
+                super().throw_negative_batch,
+                batch_no=batch_no,
+                available_qty=available_qty,
+                precision=precision,
+                posting_datetime=posting_datetime,
+            )
+
         if self._allow_negative_batch():
             return
 
