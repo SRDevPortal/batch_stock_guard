@@ -88,6 +88,9 @@ const add_stock_guard_buttons = (frm) => {
 				}
 
 				const summary = rows.map((row) => {
+					if (row.status === "skipped") {
+						return `<li><b>${escape_html(row.item_code || "")}</b> - ${escape_html(row.warehouse || "")}: ${escape_html(row.message || "")}</li>`;
+					}
 					return `<li><b>${escape_html(row.item_code || "")}</b> - ${escape_html(row.warehouse || "")}: ${escape_html(String(row.new?.valuation_rate ?? ""))}</li>`;
 				});
 				frappe.msgprint({
@@ -98,6 +101,59 @@ const add_stock_guard_buttons = (frm) => {
 			},
 		});
 	}, __("Batch Stock Guard"));
+};
+
+const add_apply_valuation_repair_button = (frm) => {
+	frm.add_custom_button(__("Apply Valuation Repair"), () => {
+		if (frm.is_new()) {
+			frappe.msgprint(__("Please save the Sales Invoice before applying valuation repair."));
+			return;
+		}
+
+		frappe.confirm(
+			__("Apply valuation repair for corrupted Bin/SLE values on this Sales Invoice?"),
+			() => {
+				frappe.call({
+					method: "batch_stock_guard.batch_stock_guard.valuation_repair.apply_invoice_valuation_repair",
+					args: {
+						invoice: frm.doc.name,
+						confirm: 1,
+					},
+					freeze: true,
+					freeze_message: __("Applying valuation repair..."),
+					callback(r) {
+						const rows = r.message || [];
+						frappe.msgprint({
+							title: __("Valuation Repair Applied"),
+							message: __("Updated {0} valuation row(s). Check stock valuation again before submitting.", [
+								rows.length,
+							]),
+							indicator: "green",
+						});
+					},
+				});
+			}
+		);
+	}, __("Batch Stock Guard"));
+};
+
+const maybe_add_apply_valuation_repair_button = (frm) => {
+	if (frm.is_new()) {
+		return;
+	}
+
+	frappe.call({
+		method: "batch_stock_guard.batch_stock_guard.valuation_repair.preview_invoice_valuation_repair",
+		args: {
+			invoice: frm.doc.name,
+		},
+		callback(r) {
+			const rows = r.message || [];
+			if (rows.some((row) => row.status !== "skipped")) {
+				add_apply_valuation_repair_button(frm);
+			}
+		},
+	});
 };
 
 frappe.ui.form.on("Sales Invoice", {
@@ -121,6 +177,7 @@ frappe.ui.form.on("Sales Invoice", {
 					return;
 				}
 				add_stock_guard_buttons(frm);
+				maybe_add_apply_valuation_repair_button(frm);
 			},
 		});
 	},

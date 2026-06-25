@@ -9,7 +9,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt, get_datetime, getdate
 
-from batch_stock_guard.batch_stock_guard.settings import is_enabled
+from batch_stock_guard.batch_stock_guard.settings import get_float, is_enabled
 
 
 SLE_FIELDS = [
@@ -114,6 +114,31 @@ def _get_invoice_rows(invoice: str) -> list[frappe._dict]:
         )
 
     return rows
+
+
+def _get_invoice_repair_rows(invoice: str) -> list[frappe._dict]:
+    from batch_stock_guard.batch_stock_guard.logic.valuation_guard import inspect_stock_valuation
+
+    doc = frappe.get_doc("Sales Invoice", invoice)
+    issues = inspect_stock_valuation(doc)
+    warning_limit = get_float("stock_value_warning_limit")
+    block_limit = get_float("stock_value_block_limit")
+    repair_keys = {
+        (issue.item_code, issue.warehouse)
+        for issue in issues
+        if flt(issue.current_valuation_rate) < 0
+        or (warning_limit and abs(flt(issue.current_stock_value)) >= warning_limit)
+        or (block_limit and abs(flt(issue.projected_stock_value)) >= block_limit)
+    }
+
+    if not repair_keys:
+        return []
+
+    return [
+        row
+        for row in _get_invoice_rows(invoice)
+        if (row.item_code, row.warehouse) in repair_keys
+    ]
 
 
 def _find_baseline_sle(row: frappe._dict) -> frappe._dict:
@@ -382,7 +407,33 @@ def preview_invoice_stock_risk(invoice: str):
 
 @frappe.whitelist()
 def preview_invoice_valuation_repair(invoice: str):
-    return preview_bulk_valuation_repair(invoice=invoice)
+    _ensure_system_manager()
+    _ensure_repair_tools_enabled()
+
+    repair_rows = _get_invoice_repair_rows(invoice)
+    if not repair_rows:
+        return []
+
+    results = []
+    for row in _group_rows(repair_rows):
+        try:
+            result = _build_repair_result(row)
+            result.status = "ready"
+            results.append(result)
+        except frappe.ValidationError as exc:
+            results.append(
+                frappe._dict(
+                    status="skipped",
+                    item_code=row.item_code,
+                    warehouse=row.warehouse,
+                    posting_date=row.posting_date,
+                    posting_time=row.posting_time,
+                    valuation_rate=row.valuation_rate,
+                    message=str(exc),
+                )
+            )
+
+    return results
 
 
 @frappe.whitelist()
@@ -393,8 +444,12 @@ def apply_invoice_valuation_repair(
     update_incoming_rate: bool | str = False,
     commit: bool | str = True,
 ):
+    repair_rows = _get_invoice_repair_rows(invoice)
+    if not repair_rows:
+        frappe.throw(_("No invoice valuation repair rows found."))
+
     return apply_bulk_valuation_repair(
-        invoice=invoice,
+        rows=repair_rows,
         confirm=confirm,
         enqueue_repost=enqueue_repost,
         update_incoming_rate=update_incoming_rate,

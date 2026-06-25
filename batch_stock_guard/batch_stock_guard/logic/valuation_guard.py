@@ -266,7 +266,10 @@ def _validate_doc(doc, feature_flag: str) -> None:
 	frappe.throw(
 		"<br><br>".join(_format_issue(issue) for issue in blocking_issues)
 		+ "<br><br>"
-		+ _("Run valuation repair before submitting this stock transaction."),
+		+ _(
+			"Fix the listed stock valuation issues before submitting. "
+			"Use valuation repair for corrupted Bin/SLE values, and correct the invoice item or batch/source rate for transaction-rate issues."
+		),
 		title=_("Stock Valuation Blocked"),
 	)
 
