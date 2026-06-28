@@ -13,3 +13,8 @@ class BatchStockGuardSettings(Document):
 
 		if self.max_allowed_valuation_rate and self.max_allowed_valuation_rate <= 0:
 			frappe.throw("Max Allowed Valuation Rate must be greater than zero.")
+
+	def on_update(self):
+		from batch_stock_guard.batch_stock_guard.settings import clear_settings_cache
+
+		clear_settings_cache()

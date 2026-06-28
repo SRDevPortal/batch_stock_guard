@@ -13,6 +13,12 @@
   "enable_stock_entry_valuation_guard",
   "enable_valuation_repair_tools",
   "enable_client_buttons",
+  "button_access_initialized",
+  "button_access_section",
+  "check_valuation_role_rows",
+  "check_valuation_role_profile_rows",
+  "repair_tool_role_rows",
+  "repair_tool_role_profile_rows",
   "thresholds_section",
   "stock_value_warning_limit",
   "stock_value_block_limit",
@@ -62,6 +68,47 @@
    "fieldname": "enable_client_buttons",
    "fieldtype": "Check",
    "label": "Enable Client Buttons"
+  },
+  {
+   "default": "0",
+   "fieldname": "button_access_initialized",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Button Access Initialized"
+  },
+  {
+   "description": "Configure who can see and use the Batch Stock Guard buttons on Sales Invoice. Administrator is always allowed.",
+   "fieldname": "button_access_section",
+   "fieldtype": "Section Break",
+   "label": "Button Access"
+  },
+  {
+   "description": "Users with any of these roles can see and use Check Stock Valuation.",
+   "fieldname": "check_valuation_role_rows",
+   "fieldtype": "Table",
+   "label": "Check Valuation Roles",
+   "options": "Batch Stock Guard Role Access"
+  },
+  {
+   "description": "Users assigned to any of these role profiles can see and use Check Stock Valuation.",
+   "fieldname": "check_valuation_role_profile_rows",
+   "fieldtype": "Table",
+   "label": "Check Valuation Role Profiles",
+   "options": "Batch Stock Guard Role Profile Access"
+  },
+  {
+   "description": "Users with any of these roles can preview and apply valuation repair.",
+   "fieldname": "repair_tool_role_rows",
+   "fieldtype": "Table",
+   "label": "Repair Tool Roles",
+   "options": "Batch Stock Guard Role Access"
+  },
+  {
+   "description": "Users assigned to any of these role profiles can preview and apply valuation repair.",
+   "fieldname": "repair_tool_role_profile_rows",
+   "fieldtype": "Table",
+   "label": "Repair Tool Role Profiles",
+   "options": "Batch Stock Guard Role Profile Access"
   },
   {
    "fieldname": "thresholds_section",

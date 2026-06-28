@@ -86,7 +86,7 @@ class TestValuationRepair(FrappeTestCase):
 
     def test_apply_requires_confirm(self):
         with (
-            patch.object(valuation_repair, "_ensure_system_manager"),
+            patch.object(valuation_repair, "_ensure_repair_access"),
             self.assertRaises(frappe.ValidationError),
         ):
             valuation_repair.apply_bulk_valuation_repair(rows=[], confirm=0)

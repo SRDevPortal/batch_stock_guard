@@ -9,7 +9,11 @@ import frappe
 from frappe import _
 from frappe.utils import flt, get_datetime, getdate
 
-from batch_stock_guard.batch_stock_guard.settings import get_float, is_enabled
+from batch_stock_guard.batch_stock_guard.settings import (
+    ensure_can_use_valuation_repair_tools,
+    get_float,
+    is_enabled,
+)
 
 
 SLE_FIELDS = [
@@ -32,13 +36,14 @@ SLE_FIELDS = [
 ]
 
 
-def _ensure_system_manager() -> None:
-    frappe.only_for("System Manager")
-
-
 def _ensure_repair_tools_enabled() -> None:
     if not is_enabled("enable_valuation_repair_tools"):
         frappe.throw(_("Valuation repair tools are disabled in Batch Stock Guard Settings."))
+
+
+def _ensure_repair_access() -> None:
+    _ensure_repair_tools_enabled()
+    ensure_can_use_valuation_repair_tools()
 
 
 def _as_bool(value) -> bool:
@@ -123,13 +128,21 @@ def _get_invoice_repair_rows(invoice: str) -> list[frappe._dict]:
     issues = inspect_stock_valuation(doc)
     warning_limit = get_float("stock_value_warning_limit")
     block_limit = get_float("stock_value_block_limit")
-    repair_keys = {
-        (issue.item_code, issue.warehouse)
-        for issue in issues
-        if flt(issue.current_valuation_rate) < 0
-        or (warning_limit and abs(flt(issue.current_stock_value)) >= warning_limit)
-        or (block_limit and abs(flt(issue.projected_stock_value)) >= block_limit)
-    }
+    repair_keys = set()
+    for issue in issues:
+        if issue.source not in {"bin", "latest_sle"}:
+            continue
+
+        latest_sle = (issue.details or {}).get("latest_sle") or {}
+        if (
+            flt(issue.current_valuation_rate) < 0
+            or (warning_limit and abs(flt(issue.current_stock_value)) >= warning_limit)
+            or (block_limit and abs(flt(issue.current_stock_value)) >= block_limit)
+            or flt(latest_sle.get("valuation_rate")) < 0
+            or (warning_limit and abs(flt(latest_sle.get("stock_value"))) >= warning_limit)
+            or (block_limit and abs(flt(latest_sle.get("stock_value"))) >= block_limit)
+        ):
+            repair_keys.add((issue.item_code, issue.warehouse))
 
     if not repair_keys:
         return []
@@ -327,8 +340,7 @@ def _make_rows(rows=None, invoice: str | None = None) -> list[frappe._dict]:
 
 @frappe.whitelist()
 def preview_bulk_valuation_repair(rows=None, invoice: str | None = None):
-    _ensure_system_manager()
-    _ensure_repair_tools_enabled()
+    _ensure_repair_access()
     repair_rows = _make_rows(rows=rows, invoice=invoice)
     return [_build_repair_result(row) for row in repair_rows]
 
@@ -342,8 +354,7 @@ def apply_bulk_valuation_repair(
     update_incoming_rate: bool | str = False,
     commit: bool | str = True,
 ):
-    _ensure_system_manager()
-    _ensure_repair_tools_enabled()
+    _ensure_repair_access()
     if not _as_bool(confirm):
         frappe.throw(_("Set confirm=1 to apply valuation repair. Run preview first."))
 
@@ -374,8 +385,7 @@ def repair_item_valuation(
     enqueue_repost: bool | str = True,
     commit: bool | str = True,
 ):
-    _ensure_system_manager()
-    _ensure_repair_tools_enabled()
+    _ensure_repair_access()
     row = {
         "item_code": item_code,
         "warehouse": warehouse,
@@ -396,8 +406,7 @@ def repair_item_valuation(
 
 @frappe.whitelist()
 def preview_invoice_stock_risk(invoice: str):
-    _ensure_system_manager()
-    _ensure_repair_tools_enabled()
+    _ensure_repair_access()
 
     from batch_stock_guard.batch_stock_guard.logic.valuation_guard import inspect_stock_valuation
 
@@ -406,9 +415,61 @@ def preview_invoice_stock_risk(invoice: str):
 
 
 @frappe.whitelist()
+def diagnose_historical_stock_valuation(
+    item_code: str | None = None,
+    warehouse: str | None = None,
+    date_from=None,
+    date_to=None,
+    negative_valuation_rate_only: bool | str = False,
+    huge_stock_value_only: bool | str = False,
+    negative_incoming_rate_only: bool | str = False,
+    limit: int | str = 200,
+):
+    _ensure_repair_access()
+
+    conditions = ["is_cancelled = 0"]
+    values = []
+    if item_code:
+        conditions.append("item_code = %s")
+        values.append(item_code)
+    if warehouse:
+        conditions.append("warehouse = %s")
+        values.append(warehouse)
+    if date_from:
+        conditions.append("posting_date >= %s")
+        values.append(getdate(date_from))
+    if date_to:
+        conditions.append("posting_date <= %s")
+        values.append(getdate(date_to))
+    if _as_bool(negative_valuation_rate_only):
+        conditions.append("valuation_rate < 0")
+    if _as_bool(negative_incoming_rate_only):
+        conditions.append("incoming_rate < 0")
+    if _as_bool(huge_stock_value_only):
+        limit_value = get_float("stock_value_block_limit") or get_float("stock_value_warning_limit")
+        if limit_value:
+            conditions.append("ABS(stock_value) >= %s")
+            values.append(limit_value)
+
+    return frappe.db.sql(
+        f"""
+        SELECT
+            name, item_code, warehouse, company, posting_date, posting_time, posting_datetime,
+            actual_qty, qty_after_transaction, incoming_rate, valuation_rate, stock_value,
+            stock_value_difference, voucher_type, voucher_no
+        FROM `tabStock Ledger Entry`
+        WHERE {" AND ".join(conditions)}
+        ORDER BY posting_datetime DESC, creation DESC, name DESC
+        LIMIT %s
+        """,
+        tuple(values + [max(1, min(int(limit or 200), 1000))]),
+        as_dict=True,
+    )
+
+
+@frappe.whitelist()
 def preview_invoice_valuation_repair(invoice: str):
-    _ensure_system_manager()
-    _ensure_repair_tools_enabled()
+    _ensure_repair_access()
 
     repair_rows = _get_invoice_repair_rows(invoice)
     if not repair_rows:
@@ -444,6 +505,7 @@ def apply_invoice_valuation_repair(
     update_incoming_rate: bool | str = False,
     commit: bool | str = True,
 ):
+    _ensure_repair_access()
     repair_rows = _get_invoice_repair_rows(invoice)
     if not repair_rows:
         frappe.throw(_("No invoice valuation repair rows found."))
