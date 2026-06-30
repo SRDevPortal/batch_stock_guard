@@ -23,6 +23,7 @@
   "stock_value_warning_limit",
   "stock_value_block_limit",
   "max_allowed_valuation_rate",
+  "allow_negative_stock_value",
   "allow_negative_valuation_rate",
   "logging_section",
   "log_blocked_transactions"
@@ -132,6 +133,13 @@
    "fieldname": "max_allowed_valuation_rate",
    "fieldtype": "Float",
    "label": "Max Allowed Valuation Rate"
+  },
+  {
+   "default": "1",
+   "description": "Skip warning and block checks when Bin or projected stock value is negative.",
+   "fieldname": "allow_negative_stock_value",
+   "fieldtype": "Check",
+   "label": "Allow Negative Stock Value"
   },
   {
    "default": "0",

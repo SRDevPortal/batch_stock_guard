@@ -51,12 +51,64 @@ class TestSettingsAndValuationGuard(FrappeTestCase):
 					"max_allowed_valuation_rate": 1000000,
 				}[fieldname],
 			),
-			patch.object(valuation_guard, "is_enabled", side_effect=lambda fieldname: fieldname != "allow_negative_valuation_rate"),
+			patch.object(
+				valuation_guard,
+				"is_enabled",
+				side_effect=lambda fieldname: fieldname != "allow_negative_valuation_rate",
+			),
 		):
 			issues = valuation_guard.inspect_stock_valuation(doc)
 
 		self.assertTrue(any(issue.severity == "block" for issue in issues))
 		self.assertTrue(any(issue.item_code == "IMMUNITY 90" for issue in issues))
+
+	def test_sales_invoice_guard_can_ignore_negative_stock_value(self):
+		doc = frappe._dict(
+			doctype="Sales Invoice",
+			name="SINV-TEST",
+			update_stock=1,
+			items=[
+				frappe._dict(
+					name="ROW-1",
+					item_code="IMMUNITY 90",
+					warehouse="Packaging Warehouse - SR",
+					stock_qty=1,
+					incoming_rate=28,
+				)
+			],
+		)
+
+		with (
+			patch.object(valuation_guard, "_is_stock_item", return_value=True),
+			patch.object(
+				valuation_guard,
+				"_get_bin",
+				return_value=frappe._dict(
+					actual_qty=8610,
+					valuation_rate=28,
+					stock_value=-990117474510.43,
+				),
+			),
+			patch.object(valuation_guard, "_get_bundle_rate", return_value=None),
+			patch.object(valuation_guard, "_get_latest_previous_sle", return_value=frappe._dict()),
+			patch.object(
+				valuation_guard,
+				"get_float",
+				side_effect=lambda fieldname: {
+					"stock_value_block_limit": 990000000000,
+					"stock_value_warning_limit": 900000000000,
+					"max_allowed_valuation_rate": 1000000,
+				}[fieldname],
+			),
+			patch.object(
+				valuation_guard,
+				"is_enabled",
+				side_effect=lambda fieldname: fieldname == "allow_negative_stock_value",
+			),
+		):
+			issues = valuation_guard.inspect_stock_valuation(doc)
+
+		self.assertFalse([issue for issue in issues if issue.source == "bin"])
 
 	def test_sales_invoice_guard_can_be_disabled(self):
 		doc = frappe._dict(doctype="Sales Invoice", name="SINV-TEST", update_stock=1, items=[])

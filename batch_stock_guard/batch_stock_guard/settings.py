@@ -22,6 +22,7 @@ DEFAULTS = {
 	"stock_value_warning_limit": 900000000000,
 	"stock_value_block_limit": 990000000000,
 	"max_allowed_valuation_rate": 1000000,
+	"allow_negative_stock_value": 1,
 	"allow_negative_valuation_rate": 0,
 	"log_blocked_transactions": 1,
 	"button_access_initialized": 0,

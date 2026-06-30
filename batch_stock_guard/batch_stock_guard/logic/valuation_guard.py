@@ -183,11 +183,20 @@ def _get_latest_previous_sle(item_code: str, warehouse: str, posting_date=None, 
 	return frappe._dict(sle[0]) if sle else frappe._dict()
 
 
-def _stock_value_is_suspicious(value) -> bool:
+def _stock_value_is_suspicious(value, allow_negative_stock_value: bool | None = None) -> bool:
 	warning_limit = get_float("stock_value_warning_limit")
 	block_limit = get_float("stock_value_block_limit")
 	limit = block_limit or warning_limit
-	return bool(limit and abs(flt(value)) >= limit)
+	if allow_negative_stock_value is None:
+		allow_negative_stock_value = is_enabled("allow_negative_stock_value")
+	return bool(limit and _stock_value_exceeds_limit(value, limit, allow_negative_stock_value))
+
+
+def _stock_value_exceeds_limit(value, limit: float, allow_negative_stock_value: bool) -> bool:
+	value = flt(value)
+	if allow_negative_stock_value and value < 0:
+		return False
+	return abs(value) >= limit
 
 
 def _rate_is_suspicious(value) -> bool:
@@ -324,6 +333,7 @@ def inspect_stock_valuation(doc) -> list[StockValuationIssue]:
 	block_limit = get_float("stock_value_block_limit")
 	warning_limit = get_float("stock_value_warning_limit")
 	max_rate = get_float("max_allowed_valuation_rate")
+	allow_negative_stock_value = is_enabled("allow_negative_stock_value")
 	allow_negative_rate = is_enabled("allow_negative_valuation_rate")
 
 	issues: list[StockValuationIssue] = []
@@ -337,7 +347,9 @@ def inspect_stock_valuation(doc) -> list[StockValuationIssue]:
 		diagnosis = diagnose_row_rate_source(doc, row)
 		details = _issue_details(row, diagnosis)
 
-		if block_limit and abs(current_stock_value) >= block_limit:
+		if block_limit and _stock_value_exceeds_limit(
+			current_stock_value, block_limit, allow_negative_stock_value
+		):
 			_append_issue(
 				issues,
 				row,
@@ -347,7 +359,9 @@ def inspect_stock_valuation(doc) -> list[StockValuationIssue]:
 				source="bin",
 				details=details,
 			)
-		elif warning_limit and abs(current_stock_value) >= warning_limit:
+		elif warning_limit and _stock_value_exceeds_limit(
+			current_stock_value, warning_limit, allow_negative_stock_value
+		):
 			_append_issue(
 				issues,
 				row,
@@ -358,7 +372,9 @@ def inspect_stock_valuation(doc) -> list[StockValuationIssue]:
 				details=details,
 			)
 
-		if block_limit and abs(projected_stock_value) >= block_limit:
+		if block_limit and _stock_value_exceeds_limit(
+			projected_stock_value, block_limit, allow_negative_stock_value
+		):
 			_append_issue(
 				issues,
 				row,
