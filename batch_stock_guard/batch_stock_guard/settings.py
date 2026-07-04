@@ -16,6 +16,7 @@ DEFAULTS = {
 	"enable_total_stock_guard": 1,
 	"enable_batch_bundle_override_logic": 1,
 	"enable_sales_invoice_valuation_guard": 1,
+	"allow_bulk_credit_note_valuation_bypass": 0,
 	"enable_stock_entry_valuation_guard": 1,
 	"enable_valuation_repair_tools": 1,
 	"enable_client_buttons": 1,

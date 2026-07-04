@@ -10,6 +10,7 @@
   "enable_total_stock_guard",
   "enable_batch_bundle_override_logic",
   "enable_sales_invoice_valuation_guard",
+  "allow_bulk_credit_note_valuation_bypass",
   "enable_stock_entry_valuation_guard",
   "enable_valuation_repair_tools",
   "enable_client_buttons",
@@ -51,6 +52,13 @@
    "fieldname": "enable_sales_invoice_valuation_guard",
    "fieldtype": "Check",
    "label": "Enable Sales Invoice Valuation Guard"
+  },
+  {
+   "default": "0",
+   "description": "Allow Bulk Credit Note return credit notes to bypass Sales Invoice valuation guard when an explicit request-local bypass flag is present.",
+   "fieldname": "allow_bulk_credit_note_valuation_bypass",
+   "fieldtype": "Check",
+   "label": "Allow Bulk Credit Note Valuation Bypass"
   },
   {
    "default": "1",

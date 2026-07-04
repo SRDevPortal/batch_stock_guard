@@ -8,11 +8,34 @@ from batch_stock_guard.batch_stock_guard.logic import valuation_guard
 
 
 class TestSettingsAndValuationGuard(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		self._previous_ignore_bcn_guard = getattr(
+			frappe.flags,
+			"ignore_sales_invoice_valuation_guard_for_bulk_credit_note",
+			None,
+		)
+		self._previous_bcn_name = getattr(frappe.flags, "bulk_credit_note_name", None)
+
+	def tearDown(self):
+		if self._previous_ignore_bcn_guard is None:
+			frappe.flags.pop("ignore_sales_invoice_valuation_guard_for_bulk_credit_note", None)
+		else:
+			frappe.flags.ignore_sales_invoice_valuation_guard_for_bulk_credit_note = self._previous_ignore_bcn_guard
+
+		if self._previous_bcn_name is None:
+			frappe.flags.pop("bulk_credit_note_name", None)
+		else:
+			frappe.flags.bulk_credit_note_name = self._previous_bcn_name
+
+		super().tearDown()
+
 	def test_settings_defaults_enable_existing_features_when_doctype_missing(self):
 		settings.clear_settings_cache()
 		with patch.object(settings, "_doctype_available", return_value=False):
 			self.assertTrue(settings.is_enabled("enable_total_stock_guard"))
 			self.assertTrue(settings.is_enabled("enable_batch_bundle_override_logic"))
+			self.assertFalse(settings.is_enabled("allow_bulk_credit_note_valuation_bypass"))
 
 	def test_sales_invoice_guard_detects_corrupted_bin(self):
 		doc = frappe._dict(
@@ -120,3 +143,67 @@ class TestSettingsAndValuationGuard(FrappeTestCase):
 			valuation_guard.validate_sales_invoice_stock_valuation(doc)
 
 		inspect.assert_not_called()
+
+	def test_bulk_credit_note_bypass_setting_disabled_still_validates(self):
+		doc = frappe._dict(doctype="Sales Invoice", name="SINV-RETURN", is_return=1, update_stock=1, items=[])
+		frappe.flags.ignore_sales_invoice_valuation_guard_for_bulk_credit_note = True
+		frappe.flags.bulk_credit_note_name = "BCN-TEST"
+
+		with (
+			patch.object(
+				valuation_guard,
+				"is_enabled",
+				side_effect=lambda fieldname: fieldname != "allow_bulk_credit_note_valuation_bypass",
+			),
+			patch.object(valuation_guard, "inspect_stock_valuation", return_value=[]) as inspect,
+		):
+			valuation_guard.validate_sales_invoice_stock_valuation(doc)
+
+		inspect.assert_called_once_with(doc)
+
+	def test_bulk_credit_note_bypass_skips_sales_invoice_valuation_guard(self):
+		doc = frappe._dict(doctype="Sales Invoice", name="SINV-RETURN", is_return=1, update_stock=1, items=[])
+		frappe.flags.ignore_sales_invoice_valuation_guard_for_bulk_credit_note = True
+		frappe.flags.bulk_credit_note_name = "BCN-TEST"
+
+		with (
+			patch.object(valuation_guard, "is_enabled", return_value=True),
+			patch.object(valuation_guard, "inspect_stock_valuation") as inspect,
+		):
+			valuation_guard.validate_sales_invoice_stock_valuation(doc)
+
+		inspect.assert_not_called()
+
+	def test_bulk_credit_note_bypass_requires_bulk_credit_note_name(self):
+		doc = frappe._dict(doctype="Sales Invoice", name="SINV-RETURN", is_return=1, update_stock=1, items=[])
+		frappe.flags.ignore_sales_invoice_valuation_guard_for_bulk_credit_note = True
+		frappe.flags.pop("bulk_credit_note_name", None)
+
+		with (
+			patch.object(valuation_guard, "is_enabled", return_value=True),
+			patch.object(valuation_guard, "inspect_stock_valuation", return_value=[]) as inspect,
+		):
+			valuation_guard.validate_sales_invoice_stock_valuation(doc)
+
+		inspect.assert_called_once_with(doc)
+
+	def test_bulk_credit_note_bypass_does_not_skip_normal_sales_invoice(self):
+		doc = frappe._dict(doctype="Sales Invoice", name="SINV-TEST", is_return=0, update_stock=1, items=[])
+		frappe.flags.ignore_sales_invoice_valuation_guard_for_bulk_credit_note = True
+		frappe.flags.bulk_credit_note_name = "BCN-TEST"
+
+		with (
+			patch.object(valuation_guard, "is_enabled", return_value=True),
+			patch.object(valuation_guard, "inspect_stock_valuation", return_value=[]) as inspect,
+		):
+			valuation_guard.validate_sales_invoice_stock_valuation(doc)
+
+		inspect.assert_called_once_with(doc)
+
+	def test_bulk_credit_note_bypass_requires_update_stock(self):
+		doc = frappe._dict(doctype="Sales Invoice", name="SINV-RETURN", is_return=1, update_stock=0, items=[])
+		frappe.flags.ignore_sales_invoice_valuation_guard_for_bulk_credit_note = True
+		frappe.flags.bulk_credit_note_name = "BCN-TEST"
+
+		with patch.object(valuation_guard, "is_enabled", return_value=True):
+			self.assertFalse(valuation_guard._should_bypass_for_bulk_credit_note(doc))

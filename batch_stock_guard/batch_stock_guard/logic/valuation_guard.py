@@ -554,7 +554,26 @@ def _validate_doc(doc, feature_flag: str) -> None:
 	)
 
 
+def _should_bypass_for_bulk_credit_note(doc) -> bool:
+	if not is_enabled("allow_bulk_credit_note_valuation_bypass"):
+		return False
+	if not getattr(frappe.flags, "ignore_sales_invoice_valuation_guard_for_bulk_credit_note", False):
+		return False
+	if not getattr(frappe.flags, "bulk_credit_note_name", None):
+		return False
+	if doc.doctype != "Sales Invoice":
+		return False
+	if not getattr(doc, "is_return", 0):
+		return False
+	if not getattr(doc, "update_stock", 0):
+		return False
+	return True
+
+
 def validate_sales_invoice_stock_valuation(doc, method=None):
+	if _should_bypass_for_bulk_credit_note(doc):
+		return
+
 	_validate_doc(doc, "enable_sales_invoice_valuation_guard")
 
 
