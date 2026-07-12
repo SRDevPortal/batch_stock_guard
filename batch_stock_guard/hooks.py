@@ -87,6 +87,7 @@ doctype_js = {
 
 # before_install = "batch_stock_guard.install.before_install"
 after_install = "batch_stock_guard.batch_stock_guard.setup.after_install"
+before_migrate = "batch_stock_guard.batch_stock_guard.setup.before_migrate"
 after_migrate = "batch_stock_guard.batch_stock_guard.setup.after_migrate"
 
 # Uninstallation

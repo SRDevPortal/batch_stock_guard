@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from decimal import Decimal, InvalidOperation
 
 import frappe
 from frappe import _
@@ -30,6 +31,12 @@ class StockValuationIssue:
 	transaction_rate: float | None = None
 	source: str | None = None
 	details: dict | None = None
+
+
+# Frappe's default Currency/Float storage is DECIMAL(21,9): 12 integer digits.
+# Keep this hard boundary in code so a setting can never permit a database overflow.
+DATABASE_DECIMAL_MAX = Decimal("999999999999.999999999")
+DEFAULT_DATABASE_SAFE_LIMIT = Decimal("900000000000")
 
 
 def _is_stock_item(item_code: str | None) -> bool:
@@ -161,7 +168,127 @@ def _sle_fields() -> list[str]:
 	for fieldname in ("batch_no", "serial_and_batch_bundle"):
 		if meta.has_field(fieldname):
 			fields.append(fieldname)
+	if meta.has_field("stock_queue"):
+		fields.append("stock_queue")
 	return fields
+
+
+def _database_safe_limit() -> Decimal:
+	configured = get_float("database_safe_stock_value_limit")
+	limit = Decimal(str(configured)) if configured > 0 else DEFAULT_DATABASE_SAFE_LIMIT
+	return min(limit, DEFAULT_DATABASE_SAFE_LIMIT, DATABASE_DECIMAL_MAX)
+
+
+def _unsafe_database_number(value, *, limit: Decimal | None = None) -> bool:
+	"""Return True for non-finite or storage-unsafe numeric values, for either sign."""
+	if value in (None, ""):
+		return False
+	try:
+		number = Decimal(str(value))
+	except (InvalidOperation, TypeError, ValueError):
+		return True
+	return not number.is_finite() or abs(number) >= (limit or _database_safe_limit())
+
+
+def _parse_stock_queue(value) -> list:
+	if not value:
+		return []
+	if isinstance(value, list):
+		return value
+	try:
+		parsed = json.loads(value)
+	except (TypeError, ValueError):
+		return []
+	return parsed if isinstance(parsed, list) else []
+
+
+def _get_replay_sles(item_code: str, warehouse: str, posting_date=None, posting_time=None) -> list[frappe._dict]:
+	filters = {"item_code": item_code, "warehouse": warehouse, "is_cancelled": 0}
+	if posting_date:
+		filters["posting_datetime"] = (">=", get_datetime(f"{posting_date} {posting_time or '00:00:00'}"))
+
+	return [
+		frappe._dict(row)
+		for row in frappe.get_all(
+			"Stock Ledger Entry",
+			fields=_sle_fields(),
+			filters=filters,
+			order_by="posting_datetime asc, creation asc, name asc",
+			limit_page_length=5000,
+		)
+	]
+
+
+def _replay_sle_problem(sle: frappe._dict, max_rate: float, hard_limit: Decimal) -> tuple[str, str] | None:
+	numeric_checks = (
+		("stock_value", sle.get("stock_value")),
+		("stock_value_difference", sle.get("stock_value_difference")),
+		("qty_after_transaction × valuation_rate", flt(sle.get("qty_after_transaction")) * flt(sle.get("valuation_rate"))),
+	)
+	for label, value in numeric_checks:
+		if _unsafe_database_number(value, limit=hard_limit):
+			return label, str(value)
+
+	for label in ("valuation_rate", "incoming_rate"):
+		value = sle.get(label)
+		if _unsafe_database_number(value, limit=DATABASE_DECIMAL_MAX) or (max_rate and abs(flt(value)) > max_rate):
+			return label, str(value)
+
+	for index, queue_row in enumerate(_parse_stock_queue(sle.get("stock_queue")), start=1):
+		if not isinstance(queue_row, (list, tuple)) or len(queue_row) < 2:
+			continue
+		qty, rate = queue_row[0], queue_row[1]
+		queue_value = flt(qty) * flt(rate)
+		if (
+			_unsafe_database_number(qty, limit=DATABASE_DECIMAL_MAX)
+			or _unsafe_database_number(rate, limit=DATABASE_DECIMAL_MAX)
+			or _unsafe_database_number(queue_value, limit=hard_limit)
+			or (max_rate and abs(flt(rate)) > max_rate)
+		):
+			return f"stock_queue row {index}", f"qty={qty}, rate={rate}, value={queue_value}"
+	return None
+
+
+def _inspect_replay_chain(row, doc, max_rate: float, hard_limit: Decimal) -> list[StockValuationIssue]:
+	issues = []
+	for sle in _get_replay_sles(
+		row.item_code,
+		row.warehouse,
+		posting_date=doc.get("posting_date"),
+		posting_time=doc.get("posting_time"),
+	):
+		problem = _replay_sle_problem(sle, max_rate, hard_limit)
+		if not problem:
+			continue
+		fieldname, value = problem
+		issues.append(
+			StockValuationIssue(
+				severity="block",
+				item_code=row.item_code,
+				warehouse=row.warehouse,
+				row_name=row.row_name,
+				batch_no=row.batch_no,
+				serial_and_batch_bundle=row.serial_and_batch_bundle,
+				current_stock_value=flt(sle.get("stock_value")),
+				projected_stock_value=flt(sle.get("qty_after_transaction")) * flt(sle.get("valuation_rate")),
+				current_valuation_rate=flt(sle.get("valuation_rate")),
+				transaction_rate=flt(row.rate),
+				source="ledger_replay_chain",
+				message=_("ERPNext will replay an unsafe Stock Ledger Entry after this transaction."),
+				details={
+					"offending_field": fieldname,
+					"offending_value": value,
+					"offending_sle": {
+						"name": sle.get("name"),
+						"posting_datetime": sle.get("posting_datetime"),
+						"voucher_type": sle.get("voucher_type"),
+						"voucher_no": sle.get("voucher_no"),
+					},
+				},
+			)
+		)
+		break
+	return issues
 
 
 def _get_latest_previous_sle(item_code: str, warehouse: str, posting_date=None, posting_time=None, batch_no=None):
@@ -335,8 +462,10 @@ def inspect_stock_valuation(doc) -> list[StockValuationIssue]:
 	max_rate = get_float("max_allowed_valuation_rate")
 	allow_negative_stock_value = is_enabled("allow_negative_stock_value")
 	allow_negative_rate = is_enabled("allow_negative_valuation_rate")
+	hard_limit = _database_safe_limit()
 
 	issues: list[StockValuationIssue] = []
+	inspected_replay_keys = set()
 	for row in _get_rows(doc):
 		bin_doc = _get_bin(row.item_code, row.warehouse)
 		current_stock_value = flt(bin_doc.stock_value)
@@ -346,6 +475,26 @@ def inspect_stock_valuation(doc) -> list[StockValuationIssue]:
 		bundle_rate = _get_bundle_rate(row.serial_and_batch_bundle)
 		diagnosis = diagnose_row_rate_source(doc, row)
 		details = _issue_details(row, diagnosis)
+
+		# Storage safety is unconditional. The business setting that permits an
+		# ordinary negative stock value must never permit DECIMAL overflow.
+		if _unsafe_database_number(current_stock_value, limit=hard_limit):
+			_append_issue(
+				issues, row, bin_doc, "block",
+				_("Current Bin stock value is outside the database-safe range."),
+				source="database_storage_limit", details=details,
+			)
+		if _unsafe_database_number(projected_stock_value, limit=hard_limit):
+			_append_issue(
+				issues, row, bin_doc, "block",
+				_("Projected stock value is outside the database-safe range."),
+				source="database_storage_limit", details=details,
+			)
+
+		replay_key = (row.item_code, row.warehouse)
+		if replay_key not in inspected_replay_keys:
+			inspected_replay_keys.add(replay_key)
+			issues.extend(_inspect_replay_chain(row, doc, max_rate, hard_limit))
 
 		if block_limit and _stock_value_exceeds_limit(
 			current_stock_value, block_limit, allow_negative_stock_value
@@ -485,6 +634,18 @@ def _format_issue(issue: StockValuationIssue) -> str:
 
 def _format_source_details(issue: StockValuationIssue) -> str:
 	details = issue.details or {}
+	offending_sle = details.get("offending_sle") or {}
+	if offending_sle.get("name"):
+		return "<br>" + _(
+			"Offending SLE: <b>{0}</b> ({1}); source voucher: <b>{2} {3}</b>; unsafe {4}: <b>{5}</b>"
+		).format(
+			frappe.utils.escape_html(offending_sle.get("name")),
+			frappe.utils.escape_html(str(offending_sle.get("posting_datetime") or "")),
+			frappe.utils.escape_html(offending_sle.get("voucher_type") or ""),
+			frappe.utils.escape_html(offending_sle.get("voucher_no") or ""),
+			frappe.utils.escape_html(details.get("offending_field") or "value"),
+			frappe.utils.escape_html(str(details.get("offending_value") or "")),
+		)
 	latest_sle = details.get("latest_sle") or {}
 	lines = [
 		_("Source: <b>{0}</b>").format(frappe.utils.escape_html(issue.source or "unknown")),

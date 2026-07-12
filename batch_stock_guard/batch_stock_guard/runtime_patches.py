@@ -4,10 +4,53 @@ from frappe.utils import flt
 from batch_stock_guard.batch_stock_guard.compat import call_with_supported_kwargs
 
 
+def _apply_stock_ledger_storage_guard():
+    """Block unsafe SLE values immediately before ERPNext's direct db_update."""
+    from frappe.model.base_document import BaseDocument
+
+    if getattr(BaseDocument.db_update, "_batch_stock_guard_storage_patched", False):
+        return
+
+    original_db_update = BaseDocument.db_update
+
+    def guarded_db_update(self, *args, **kwargs):
+        if self.doctype == "Stock Ledger Entry":
+            from batch_stock_guard.batch_stock_guard.logic.valuation_guard import (
+                _database_safe_limit,
+                _unsafe_database_number,
+            )
+
+            limit = _database_safe_limit()
+            for fieldname in ("stock_value", "stock_value_difference"):
+                value = self.get(fieldname)
+                if _unsafe_database_number(value, limit=limit):
+                    frappe.throw(
+                        frappe._(
+                            "Stock Ledger Entry {0} cannot be saved because {1} ({2}) is outside "
+                            "the database-safe range. Source voucher: {3} {4}. Repair the source "
+                            "valuation and repost stock before retrying."
+                        ).format(
+                            self.get("name") or frappe._("new entry"),
+                            fieldname,
+                            value,
+                            self.get("voucher_type") or "",
+                            self.get("voucher_no") or "",
+                        ),
+                        title=frappe._("Unsafe Stock Valuation Blocked"),
+                    )
+
+        return original_db_update(self, *args, **kwargs)
+
+    guarded_db_update._batch_stock_guard_storage_patched = True
+    BaseDocument.db_update = guarded_db_update
+
+
 def apply():
     from erpnext.stock import serial_batch_bundle as sbb
     from erpnext.stock.doctype.batch.batch import get_available_batches
     from collections import defaultdict
+
+    _apply_stock_ledger_storage_guard()
 
     if getattr(sbb.update_batch_qty, "_batch_stock_guard_patched", False):
         return

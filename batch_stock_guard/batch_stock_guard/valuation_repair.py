@@ -10,6 +10,7 @@ from frappe import _
 from frappe.utils import flt, get_datetime, getdate
 
 from batch_stock_guard.batch_stock_guard.settings import (
+    ensure_can_check_stock_valuation,
     ensure_can_use_valuation_repair_tools,
     get_float,
     is_enabled,
@@ -44,6 +45,11 @@ def _ensure_repair_tools_enabled() -> None:
 def _ensure_repair_access() -> None:
     _ensure_repair_tools_enabled()
     ensure_can_use_valuation_repair_tools()
+
+
+def _ensure_preview_access() -> None:
+    _ensure_repair_tools_enabled()
+    ensure_can_check_stock_valuation()
 
 
 def _as_bool(value) -> bool:
@@ -130,7 +136,7 @@ def _get_invoice_repair_rows(invoice: str) -> list[frappe._dict]:
     block_limit = get_float("stock_value_block_limit")
     repair_keys = set()
     for issue in issues:
-        if issue.source not in {"bin", "latest_sle"}:
+        if issue.source not in {"bin", "latest_sle", "database_storage_limit"}:
             continue
 
         latest_sle = (issue.details or {}).get("latest_sle") or {}
@@ -220,7 +226,9 @@ def _group_rows(rows: list[frappe._dict]) -> list[frappe._dict]:
 
 def _build_repair_result(row: frappe._dict) -> frappe._dict:
     sle = _find_baseline_sle(row)
-    target_qty = flt(row.qty) if row.qty is not None else flt(sle.qty_after_transaction)
+    # The row describes the desired rate, while the baseline SLE owns the
+    # ledger balance being repaired. Invoice qty is not the SLE balance.
+    target_qty = flt(sle.qty_after_transaction)
     target_stock_value = flt(target_qty * flt(row.valuation_rate))
     previous_stock_value = flt(sle.stock_value) - flt(sle.stock_value_difference)
     target_stock_value_difference = flt(target_stock_value - previous_stock_value)
@@ -340,7 +348,7 @@ def _make_rows(rows=None, invoice: str | None = None) -> list[frappe._dict]:
 
 @frappe.whitelist()
 def preview_bulk_valuation_repair(rows=None, invoice: str | None = None):
-    _ensure_repair_access()
+    _ensure_preview_access()
     repair_rows = _make_rows(rows=rows, invoice=invoice)
     return [_build_repair_result(row) for row in repair_rows]
 
@@ -385,7 +393,6 @@ def repair_item_valuation(
     enqueue_repost: bool | str = True,
     commit: bool | str = True,
 ):
-    _ensure_repair_access()
     row = {
         "item_code": item_code,
         "warehouse": warehouse,
@@ -395,6 +402,7 @@ def repair_item_valuation(
         "qty": qty,
     }
     if _as_bool(confirm):
+        _ensure_repair_access()
         return apply_bulk_valuation_repair(
             rows=[row],
             confirm=confirm,
@@ -406,7 +414,7 @@ def repair_item_valuation(
 
 @frappe.whitelist()
 def preview_invoice_stock_risk(invoice: str):
-    _ensure_repair_access()
+    _ensure_preview_access()
 
     from batch_stock_guard.batch_stock_guard.logic.valuation_guard import inspect_stock_valuation
 
@@ -425,7 +433,7 @@ def diagnose_historical_stock_valuation(
     negative_incoming_rate_only: bool | str = False,
     limit: int | str = 200,
 ):
-    _ensure_repair_access()
+    _ensure_preview_access()
 
     conditions = ["is_cancelled = 0"]
     values = []
@@ -469,7 +477,7 @@ def diagnose_historical_stock_valuation(
 
 @frappe.whitelist()
 def preview_invoice_valuation_repair(invoice: str):
-    _ensure_repair_access()
+    _ensure_preview_access()
 
     repair_rows = _get_invoice_repair_rows(invoice)
     if not repair_rows:

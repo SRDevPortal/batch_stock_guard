@@ -125,6 +125,7 @@ const show_rate_source_diagnosis = (rows) => {
 const render_issue_details = (issue) => {
 	const details = issue.details || {};
 	const latest_sle = details.latest_sle || {};
+	const offending_sle = details.offending_sle || {};
 	const heading_style =
 		"width: 260px; background: var(--fg-color); color: var(--text-color); font-weight: 600; vertical-align: top;";
 	const value_style = "vertical-align: top; word-break: break-word;";
@@ -141,6 +142,12 @@ const render_issue_details = (issue) => {
 		[__("Previous SLE Stock Value"), latest_sle.stock_value],
 		[__("Suggested Safe Rate"), details.suggested_rate],
 		[__("Suggested Rate Source"), details.suggested_rate_source],
+		[__("Offending SLE"), offending_sle.name],
+		[__("Offending SLE Time"), offending_sle.posting_datetime],
+		[__("Source Voucher Type"), offending_sle.voucher_type],
+		[__("Source Voucher"), offending_sle.voucher_no],
+		[__("Unsafe Field"), details.offending_field],
+		[__("Unsafe Value"), details.offending_value],
 	].filter((row) => row[1] !== undefined && row[1] !== null && row[1] !== "");
 
 	if (!rows.length) {
@@ -172,6 +179,12 @@ const get_issue_action = (issue) => {
 	}
 	if (issue.source === "serial_and_batch_bundle") {
 		return __("Check the Serial and Batch Bundle rate source.");
+	}
+	if (issue.source === "ledger_replay_chain") {
+		return __("Repair the source voucher/SLE, then repost stock before submitting.");
+	}
+	if (issue.source === "database_storage_limit") {
+		return __("Repair the corrupted valuation before submitting.");
 	}
 	return __("Review the diagnosis before submitting.");
 };
@@ -297,7 +310,7 @@ const add_stock_guard_buttons = (frm, config) => {
 		}, __("Batch Stock Guard"));
 	}
 
-	if (config.can_preview_valuation_repair) {
+	if (config.can_apply_valuation_repair) {
 		frm.add_custom_button(__("Fix Incoming Rate"), () => {
 			if (frm.is_new()) {
 				frappe.msgprint(__("Please save the Sales Invoice before fixing incoming rates."));
@@ -355,7 +368,9 @@ const add_stock_guard_buttons = (frm, config) => {
 				},
 			});
 		}, __("Batch Stock Guard"));
+	}
 
+	if (config.can_preview_valuation_repair) {
 		frm.add_custom_button(__("Show Bin/SLE Repair Plan"), () => {
 			if (frm.is_new()) {
 				frappe.msgprint(__("Please save the Sales Invoice before previewing Bin/SLE repair."));
@@ -464,7 +479,7 @@ const update_contextual_action_buttons = (frm, config) => {
 		return;
 	}
 
-	if (config.can_preview_valuation_repair) {
+	if (config.can_apply_valuation_repair) {
 		frappe.call({
 			method: "batch_stock_guard.batch_stock_guard.logic.valuation_guard.diagnose_invoice_rate_source",
 			args: {

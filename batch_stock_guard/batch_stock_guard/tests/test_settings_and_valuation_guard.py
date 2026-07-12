@@ -37,6 +37,33 @@ class TestSettingsAndValuationGuard(FrappeTestCase):
 			self.assertTrue(settings.is_enabled("enable_batch_bundle_override_logic"))
 			self.assertFalse(settings.is_enabled("allow_bulk_credit_note_valuation_bypass"))
 
+	def test_effective_role_grants_check_access_without_role_profile_setting(self):
+		configured = frappe._dict(
+			enable_client_buttons=1,
+			check_valuation_role_rows=[frappe._dict(role="Stock Manager")],
+			repair_tool_role_rows=[frappe._dict(role="System Manager")],
+		)
+		with (
+			patch.object(settings, "get_settings", return_value=configured),
+			patch.object(settings.frappe, "get_roles", return_value=["Stock Manager"]),
+		):
+			self.assertTrue(settings.can_check_stock_valuation("stock@example.com"))
+			self.assertFalse(settings.can_use_valuation_repair_tools("stock@example.com"))
+
+	def test_repair_role_also_receives_check_and_preview_capability(self):
+		configured = frappe._dict(
+			enable_client_buttons=1,
+			enable_valuation_repair_tools=1,
+			check_valuation_role_rows=[],
+			repair_tool_role_rows=[frappe._dict(role="System Manager")],
+		)
+		with (
+			patch.object(settings, "get_settings", return_value=configured),
+			patch.object(settings.frappe, "get_roles", return_value=["System Manager"]),
+		):
+			self.assertTrue(settings.can_check_stock_valuation("manager@example.com"))
+			self.assertTrue(settings.can_use_valuation_repair_tools("manager@example.com"))
+
 	def test_sales_invoice_guard_detects_corrupted_bin(self):
 		doc = frappe._dict(
 			doctype="Sales Invoice",
@@ -68,9 +95,10 @@ class TestSettingsAndValuationGuard(FrappeTestCase):
 			patch.object(
 				valuation_guard,
 				"get_float",
-				side_effect=lambda fieldname: {
+					side_effect=lambda fieldname: {
 					"stock_value_block_limit": 990000000000,
 					"stock_value_warning_limit": 900000000000,
+					"database_safe_stock_value_limit": 900000000000,
 					"max_allowed_valuation_rate": 1000000,
 				}[fieldname],
 			),
@@ -79,13 +107,14 @@ class TestSettingsAndValuationGuard(FrappeTestCase):
 				"is_enabled",
 				side_effect=lambda fieldname: fieldname != "allow_negative_valuation_rate",
 			),
+			patch.object(valuation_guard, "_get_replay_sles", return_value=[]),
 		):
 			issues = valuation_guard.inspect_stock_valuation(doc)
 
 		self.assertTrue(any(issue.severity == "block" for issue in issues))
 		self.assertTrue(any(issue.item_code == "IMMUNITY 90" for issue in issues))
 
-	def test_sales_invoice_guard_can_ignore_negative_stock_value(self):
+	def test_database_safety_overrides_negative_stock_value_permission(self):
 		doc = frappe._dict(
 			doctype="Sales Invoice",
 			name="SINV-TEST",
@@ -118,8 +147,9 @@ class TestSettingsAndValuationGuard(FrappeTestCase):
 				valuation_guard,
 				"get_float",
 				side_effect=lambda fieldname: {
-					"stock_value_block_limit": 990000000000,
+					"stock_value_block_limit": 900000000000,
 					"stock_value_warning_limit": 900000000000,
+					"database_safe_stock_value_limit": 900000000000,
 					"max_allowed_valuation_rate": 1000000,
 				}[fieldname],
 			),
@@ -128,10 +158,36 @@ class TestSettingsAndValuationGuard(FrappeTestCase):
 				"is_enabled",
 				side_effect=lambda fieldname: fieldname == "allow_negative_stock_value",
 			),
+			patch.object(valuation_guard, "_get_replay_sles", return_value=[]),
 		):
 			issues = valuation_guard.inspect_stock_valuation(doc)
 
-		self.assertFalse([issue for issue in issues if issue.source == "bin"])
+		self.assertTrue([issue for issue in issues if issue.source == "database_storage_limit"])
+
+	def test_small_negative_stock_value_is_still_allowed(self):
+		self.assertFalse(valuation_guard._unsafe_database_number(-100))
+		self.assertFalse(
+			valuation_guard._stock_value_exceeds_limit(-100, 1000, allow_negative_stock_value=True)
+		)
+
+	def test_database_limit_blocks_both_signs(self):
+		limit = valuation_guard.Decimal("900000000000")
+		self.assertTrue(valuation_guard._unsafe_database_number(900000000000, limit=limit))
+		self.assertTrue(valuation_guard._unsafe_database_number(-900000000000, limit=limit))
+
+	def test_replay_chain_detects_unsafe_fifo_queue(self):
+		sle = frappe._dict(
+			stock_value=100,
+			stock_value_difference=10,
+			qty_after_transaction=10,
+			valuation_rate=10,
+			incoming_rate=10,
+			stock_queue='[[1000000, 1000000]]',
+		)
+		problem = valuation_guard._replay_sle_problem(
+			sle, max_rate=1000000, hard_limit=valuation_guard.Decimal("900000000000")
+		)
+		self.assertEqual(problem[0], "stock_queue row 1")
 
 	def test_sales_invoice_guard_can_be_disabled(self):
 		doc = frappe._dict(doctype="Sales Invoice", name="SINV-TEST", update_stock=1, items=[])

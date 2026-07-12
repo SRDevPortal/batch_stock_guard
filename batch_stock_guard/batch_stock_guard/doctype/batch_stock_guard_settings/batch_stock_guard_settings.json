@@ -10,24 +10,23 @@
   "enable_total_stock_guard",
   "enable_batch_bundle_override_logic",
   "enable_sales_invoice_valuation_guard",
-  "allow_bulk_credit_note_valuation_bypass",
   "enable_stock_entry_valuation_guard",
   "enable_valuation_repair_tools",
   "enable_client_buttons",
-  "button_access_initialized",
-  "button_access_section",
-  "check_valuation_role_rows",
-  "check_valuation_role_profile_rows",
-  "repair_tool_role_rows",
-  "repair_tool_role_profile_rows",
   "thresholds_section",
   "stock_value_warning_limit",
   "stock_value_block_limit",
+  "database_safe_stock_value_limit",
   "max_allowed_valuation_rate",
   "allow_negative_stock_value",
   "allow_negative_valuation_rate",
+  "allow_bulk_credit_note_valuation_bypass",
   "logging_section",
-  "log_blocked_transactions"
+  "log_blocked_transactions",
+  "button_access_section",
+  "check_valuation_role_rows",
+  "repair_tool_role_rows",
+  "button_access_initialized"
  ],
  "fields": [
   {
@@ -92,32 +91,18 @@
    "label": "Button Access"
   },
   {
-   "description": "Users with any of these roles can see and use Check Stock Valuation.",
+   "description": "Users with any of these roles can check valuation, diagnose sources, and preview repair plans.",
    "fieldname": "check_valuation_role_rows",
    "fieldtype": "Table",
    "label": "Check Valuation Roles",
    "options": "Batch Stock Guard Role Access"
   },
   {
-   "description": "Users assigned to any of these role profiles can see and use Check Stock Valuation.",
-   "fieldname": "check_valuation_role_profile_rows",
-   "fieldtype": "Table",
-   "label": "Check Valuation Role Profiles",
-   "options": "Batch Stock Guard Role Profile Access"
-  },
-  {
-   "description": "Users with any of these roles can preview and apply valuation repair.",
+   "description": "Users with any of these roles can apply valuation repairs. Keep this restricted to trusted administrators.",
    "fieldname": "repair_tool_role_rows",
    "fieldtype": "Table",
    "label": "Repair Tool Roles",
    "options": "Batch Stock Guard Role Access"
-  },
-  {
-   "description": "Users assigned to any of these role profiles can preview and apply valuation repair.",
-   "fieldname": "repair_tool_role_profile_rows",
-   "fieldtype": "Table",
-   "label": "Repair Tool Role Profiles",
-   "options": "Batch Stock Guard Role Profile Access"
   },
   {
    "fieldname": "thresholds_section",
@@ -125,25 +110,33 @@
    "label": "Thresholds"
   },
   {
-   "default": "900000000000",
+   "default": "800000000000",
    "fieldname": "stock_value_warning_limit",
    "fieldtype": "Currency",
    "label": "Stock Value Warning Limit"
   },
   {
-   "default": "990000000000",
+   "default": "900000000000",
    "fieldname": "stock_value_block_limit",
    "fieldtype": "Currency",
    "label": "Stock Value Block Limit"
   },
   {
-   "default": "1000000",
+   "default": "900000000000",
+   "description": "Non-disableable safety ceiling for the absolute value written to a DECIMAL(21,9) stock value column. Values at or above this limit are always blocked, including negative values.",
+   "fieldname": "database_safe_stock_value_limit",
+   "fieldtype": "Currency",
+   "label": "Database Safe Stock Value Limit",
+   "read_only": 1
+  },
+  {
+   "default": "100000",
    "fieldname": "max_allowed_valuation_rate",
    "fieldtype": "Float",
    "label": "Max Allowed Valuation Rate"
   },
   {
-   "default": "1",
+   "default": "0",
    "description": "Skip warning and block checks when Bin or projected stock value is negative.",
    "fieldname": "allow_negative_stock_value",
    "fieldtype": "Check",

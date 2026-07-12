@@ -16,29 +16,26 @@ DEFAULTS = {
 	"enable_total_stock_guard": 1,
 	"enable_batch_bundle_override_logic": 1,
 	"enable_sales_invoice_valuation_guard": 1,
-	"allow_bulk_credit_note_valuation_bypass": 0,
 	"enable_stock_entry_valuation_guard": 1,
 	"enable_valuation_repair_tools": 1,
 	"enable_client_buttons": 1,
-	"stock_value_warning_limit": 900000000000,
-	"stock_value_block_limit": 990000000000,
-	"max_allowed_valuation_rate": 1000000,
-	"allow_negative_stock_value": 1,
+	"stock_value_warning_limit": 800000000000,
+	"stock_value_block_limit": 900000000000,
+	"database_safe_stock_value_limit": 900000000000,
+	"max_allowed_valuation_rate": 100000,
+	"allow_negative_stock_value": 0,
 	"allow_negative_valuation_rate": 0,
+	"allow_bulk_credit_note_valuation_bypass": 0,
 	"log_blocked_transactions": 1,
 	"button_access_initialized": 0,
 	"check_valuation_roles": "",
-	"check_valuation_role_profiles": "",
 	"repair_tool_roles": "",
-	"repair_tool_role_profiles": "",
 	"check_valuation_role_rows": [
 		{"role": "System Manager"},
 		{"role": "Stock Manager"},
 		{"role": "Accounts Manager"},
 	],
-	"check_valuation_role_profile_rows": [],
 	"repair_tool_role_rows": [{"role": "System Manager"}],
-	"repair_tool_role_profile_rows": [],
 }
 
 
@@ -106,49 +103,27 @@ def _get_access_names(settings, table_fieldname: str, child_fieldname: str, lega
 	return _split_names(settings.get(legacy_fieldname))
 
 
-def _get_user_role_profile(user: str | None = None) -> str | None:
-	user = user or frappe.session.user
-	if user == "Administrator":
-		return None
-	try:
-		return frappe.db.get_value("User", user, "role_profile_name")
-	except Exception:
-		return None
-
-
-def has_configured_access(role_fieldname: str, role_profile_fieldname: str, user: str | None = None) -> bool:
+def has_configured_access(role_fieldname: str, user: str | None = None) -> bool:
 	user = user or frappe.session.user
 	if user == "Administrator":
 		return True
 
 	settings = get_settings()
 	allowed_roles = _get_access_names(settings, role_fieldname, "role", role_fieldname.replace("_rows", "s"))
-	allowed_role_profiles = _get_access_names(
-		settings,
-		role_profile_fieldname,
-		"role_profile",
-		role_profile_fieldname.replace("_rows", "s"),
-	)
-
-	if allowed_roles and allowed_roles.intersection(set(frappe.get_roles(user))):
-		return True
-
-	role_profile = _get_user_role_profile(user)
-	return bool(role_profile and role_profile in allowed_role_profiles)
+	return bool(allowed_roles and allowed_roles.intersection(set(frappe.get_roles(user))))
 
 
 def can_check_stock_valuation(user: str | None = None) -> bool:
-	return is_enabled("enable_client_buttons") and has_configured_access(
-		"check_valuation_role_rows",
-		"check_valuation_role_profile_rows",
-		user=user,
+	return is_enabled("enable_client_buttons") and (
+		has_configured_access("check_valuation_role_rows", user=user)
+		or has_configured_access("repair_tool_role_rows", user=user)
 	)
 
 
 def can_use_valuation_repair_tools(user: str | None = None) -> bool:
 	return (
 		is_enabled("enable_valuation_repair_tools")
-		and has_configured_access("repair_tool_role_rows", "repair_tool_role_profile_rows", user=user)
+		and has_configured_access("repair_tool_role_rows", user=user)
 	)
 
 
@@ -179,25 +154,15 @@ def ensure_default_settings() -> None:
 
 	if not doc.get("button_access_initialized"):
 		check_roles = _split_names(doc.get("check_valuation_roles")) or _split_names(DEFAULT_CHECK_VALUATION_ROLES)
-		check_role_profiles = _split_names(doc.get("check_valuation_role_profiles"))
 		repair_roles = _split_names(doc.get("repair_tool_roles")) or _split_names(DEFAULT_REPAIR_TOOL_ROLES)
-		repair_role_profiles = _split_names(doc.get("repair_tool_role_profiles"))
 
 		doc.set("check_valuation_role_rows", [])
 		for role in sorted(check_roles):
 			doc.append("check_valuation_role_rows", {"role": role})
 
-		doc.set("check_valuation_role_profile_rows", [])
-		for role_profile in sorted(check_role_profiles):
-			doc.append("check_valuation_role_profile_rows", {"role_profile": role_profile})
-
 		doc.set("repair_tool_role_rows", [])
 		for role in sorted(repair_roles):
 			doc.append("repair_tool_role_rows", {"role": role})
-
-		doc.set("repair_tool_role_profile_rows", [])
-		for role_profile in sorted(repair_role_profiles):
-			doc.append("repair_tool_role_profile_rows", {"role_profile": role_profile})
 
 		doc.set("button_access_initialized", 1)
 		changed = True
@@ -211,11 +176,12 @@ def ensure_default_settings() -> None:
 
 @frappe.whitelist()
 def get_client_config() -> dict:
+	can_check = can_check_stock_valuation()
 	can_repair = can_use_valuation_repair_tools()
 	return {
 		"enable_client_buttons": is_enabled("enable_client_buttons"),
 		"enable_valuation_repair_tools": is_enabled("enable_valuation_repair_tools"),
-		"can_check_stock_valuation": can_check_stock_valuation(),
-		"can_preview_valuation_repair": can_repair,
+		"can_check_stock_valuation": can_check,
+		"can_preview_valuation_repair": can_check,
 		"can_apply_valuation_repair": can_repair,
 	}

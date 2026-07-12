@@ -84,6 +84,47 @@ class TestValuationRepair(FrappeTestCase):
         self.assertEqual(result.new.stock_value_difference, 0)
         self.assertEqual(result.bin.new_stock_value, 3900)
 
+    def test_build_repair_uses_sle_balance_not_invoice_qty(self):
+        row = frappe._dict(
+            item_code="BSG DEMO ITEM",
+            warehouse="BSG Demo Warehouse",
+            posting_date="2026-07-11",
+            posting_time="12:00:00",
+            valuation_rate=100,
+            qty=1,
+        )
+        baseline = frappe._dict(
+            name="SLE-DEMO",
+            item_code=row.item_code,
+            warehouse=row.warehouse,
+            company="SR",
+            qty_after_transaction=100,
+            incoming_rate=100,
+            valuation_rate=-9100000000,
+            stock_value=-910000000000,
+            stock_value_difference=-910000000000,
+        )
+
+        with (
+            patch.object(valuation_repair, "_find_baseline_sle", return_value=baseline),
+            patch(
+                "batch_stock_guard.batch_stock_guard.valuation_repair.frappe.get_all",
+                return_value=[
+                    frappe._dict(
+                        name="BIN-DEMO",
+                        actual_qty=100,
+                        valuation_rate=-9100000000,
+                        stock_value=-910000000000,
+                    )
+                ],
+            ),
+        ):
+            result = valuation_repair._build_repair_result(row)
+
+        self.assertEqual(result.target_qty, 100)
+        self.assertEqual(result.new.stock_value, 10000)
+        self.assertEqual(result.new.stock_value_difference, 10000)
+
     def test_apply_requires_confirm(self):
         with (
             patch.object(valuation_repair, "_ensure_repair_access"),
