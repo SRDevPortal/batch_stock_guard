@@ -4,10 +4,19 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from batch_stock_guard.batch_stock_guard import settings
+from batch_stock_guard.batch_stock_guard.doctype.batch_stock_guard_role_profile_access.batch_stock_guard_role_profile_access import (
+	BatchStockGuardRoleProfileAccess,
+)
 from batch_stock_guard.batch_stock_guard.logic import valuation_guard
 
 
 class TestSettingsAndValuationGuard(FrappeTestCase):
+	def test_legacy_role_profile_controller_remains_importable_for_migration(self):
+		self.assertEqual(
+			BatchStockGuardRoleProfileAccess.__name__,
+			"BatchStockGuardRoleProfileAccess",
+		)
+
 	def setUp(self):
 		super().setUp()
 		self._previous_ignore_bcn_guard = getattr(
