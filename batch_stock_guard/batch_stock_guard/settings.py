@@ -19,6 +19,9 @@ DEFAULTS = {
 	"enable_stock_entry_valuation_guard": 1,
 	"enable_valuation_repair_tools": 1,
 	"enable_client_buttons": 1,
+	"sr_barcode_compliance_mode": "Off",
+	"sr_compliance_expiry_policy": "Block",
+	"sr_compliance_stock_policy": "Block",
 	"stock_value_warning_limit": 800000000000,
 	"stock_value_block_limit": 900000000000,
 	"database_safe_stock_value_limit": 900000000000,
@@ -75,6 +78,10 @@ def is_enabled(fieldname: str) -> bool:
 
 def get_float(fieldname: str) -> float:
 	return flt(get_settings().get(fieldname, DEFAULTS.get(fieldname, 0)))
+
+
+def get_value(fieldname: str, default=None):
+	return get_settings().get(fieldname, DEFAULTS.get(fieldname, default))
 
 
 def _split_names(value) -> set[str]:
@@ -184,4 +191,5 @@ def get_client_config() -> dict:
 		"can_check_stock_valuation": can_check,
 		"can_preview_valuation_repair": can_check,
 		"can_apply_valuation_repair": can_repair,
+		"sr_barcode_compliance_mode": get_value("sr_barcode_compliance_mode", "Off"),
 	}

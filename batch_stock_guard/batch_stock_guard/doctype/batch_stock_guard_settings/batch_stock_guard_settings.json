@@ -13,6 +13,10 @@
   "enable_stock_entry_valuation_guard",
   "enable_valuation_repair_tools",
   "enable_client_buttons",
+  "sr_barcode_compliance_section",
+  "sr_barcode_compliance_mode",
+  "sr_compliance_expiry_policy",
+  "sr_compliance_stock_policy",
   "thresholds_section",
   "stock_value_warning_limit",
   "stock_value_block_limit",
@@ -76,6 +80,35 @@
    "fieldname": "enable_client_buttons",
    "fieldtype": "Check",
    "label": "Enable Client Buttons"
+  },
+  {
+   "description": "Controls the transition from ERPNext inventory batches to compliance-only barcode labels. Compliance-only mode disables Batch Stock Guard's batch override and Sales Invoice valuation guard, while total-stock and database-safety protection remain active.",
+   "fieldname": "sr_barcode_compliance_section",
+   "fieldtype": "Section Break",
+   "label": "SR Barcode Compliance"
+  },
+  {
+   "default": "Off",
+   "description": "Off uses ERPNext Batch only. Hybrid Transition accepts both legacy ERPNext Batch barcodes and new SR Compliance Batch barcodes. SR Barcode Compliance accepts only compliance-only barcodes.",
+   "fieldname": "sr_barcode_compliance_mode",
+   "fieldtype": "Select",
+   "label": "SR Barcode Compliance Mode",
+   "options": "Off\nHybrid Transition\nSR Barcode Compliance"
+  },
+  {
+   "default": "Block",
+   "fieldname": "sr_compliance_expiry_policy",
+   "fieldtype": "Select",
+   "label": "Expired Compliance Barcode Policy",
+   "options": "Block\nWarn\nIgnore"
+  },
+  {
+   "default": "Block",
+   "description": "Uses total Item quantity in the selected Warehouse; it never checks compliance batch quantity.",
+   "fieldname": "sr_compliance_stock_policy",
+   "fieldtype": "Select",
+   "label": "Insufficient Total Stock Policy",
+   "options": "Block\nWarn\nIgnore"
   },
   {
    "default": "0",

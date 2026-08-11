@@ -8,7 +8,7 @@ from batch_stock_guard.batch_stock_guard.logic.stock_guard import validate_total
 class TestStockGuard(FrappeTestCase):
     def test_negative_stock_validation(self):
         item_code = "TEST_ITEM_GUARD"
-        warehouse = "Goods In Transit - SR"  # Valid warehouse found earlier
+        warehouse = "Packaging Warehouse - SR"
 
         # Create test item
         if not frappe.db.exists("Item", item_code):
@@ -17,6 +17,8 @@ class TestStockGuard(FrappeTestCase):
             item.item_group = "All Item Groups"
             item.stock_uom = "Nos"
             item.is_stock_item = 1
+            if frappe.get_meta("Item").has_field("gst_hsn_code"):
+                item.gst_hsn_code = "30049099"
             item.insert()
 
         # Cleanup existing SLEs for item
@@ -29,6 +31,9 @@ class TestStockGuard(FrappeTestCase):
         sle1.actual_qty = 10
         sle1.posting_date = frappe.utils.today()
         sle1.posting_time = frappe.utils.nowtime()
+        sle1.voucher_type = "Item"
+        sle1.voucher_no = item_code
+        sle1.company = frappe.db.get_value("Warehouse", warehouse, "company")
         sle1.insert()
 
         # 2. Negative entry within limit (Total: 5)
@@ -38,6 +43,9 @@ class TestStockGuard(FrappeTestCase):
         sle2.actual_qty = -5
         sle2.posting_date = frappe.utils.today()
         sle2.posting_time = frappe.utils.nowtime()
+        sle2.voucher_type = "Item"
+        sle2.voucher_no = item_code
+        sle2.company = frappe.db.get_value("Warehouse", warehouse, "company")
         sle2.insert()
 
         # 3. Negative entry EXCEEDING total limit (Total: -5)
@@ -47,11 +55,15 @@ class TestStockGuard(FrappeTestCase):
         sle3.actual_qty = -10
         sle3.posting_date = frappe.utils.today()
         sle3.posting_time = frappe.utils.nowtime()
+        sle3.voucher_type = "Item"
+        sle3.voucher_no = item_code
+        sle3.company = frappe.db.get_value("Warehouse", warehouse, "company")
 
         self.assertRaises(frappe.ValidationError, sle3.insert)
 
         # Cleanup
         frappe.db.sql("DELETE FROM `tabStock Ledger Entry` WHERE item_code = %s", item_code)
+        frappe.delete_doc("Item", item_code)
         frappe.db.commit()
 
     def test_validate_total_stock_blocks_negative_warehouse_for_any_voucher_type(self):

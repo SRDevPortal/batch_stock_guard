@@ -4,6 +4,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from batch_stock_guard.batch_stock_guard import settings
+from batch_stock_guard.batch_stock_guard.doctype.batch_stock_guard_settings.batch_stock_guard_settings import (
+	BatchStockGuardSettings,
+)
 from batch_stock_guard.batch_stock_guard.doctype.batch_stock_guard_role_profile_access.batch_stock_guard_role_profile_access import (
 	BatchStockGuardRoleProfileAccess,
 )
@@ -11,6 +14,40 @@ from batch_stock_guard.batch_stock_guard.logic import valuation_guard
 
 
 class TestSettingsAndValuationGuard(FrappeTestCase):
+	def test_compliance_mode_disables_only_batch_and_invoice_valuation_guards(self):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Batch Stock Guard Settings",
+				"sr_barcode_compliance_mode": "SR Barcode Compliance",
+				"enable_batch_bundle_override_logic": 1,
+				"enable_sales_invoice_valuation_guard": 1,
+				"enable_total_stock_guard": 1,
+				"enable_stock_entry_guard": 1,
+			}
+		)
+
+		BatchStockGuardSettings.validate(doc)
+
+		self.assertEqual(doc.enable_batch_bundle_override_logic, 0)
+		self.assertEqual(doc.enable_sales_invoice_valuation_guard, 0)
+		self.assertEqual(doc.enable_total_stock_guard, 1)
+		self.assertEqual(doc.enable_stock_entry_guard, 1)
+
+	def test_hybrid_mode_does_not_change_existing_guard_choices(self):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Batch Stock Guard Settings",
+				"sr_barcode_compliance_mode": "Hybrid Transition",
+				"enable_batch_bundle_override_logic": 1,
+				"enable_sales_invoice_valuation_guard": 1,
+			}
+		)
+
+		BatchStockGuardSettings.validate(doc)
+
+		self.assertEqual(doc.enable_batch_bundle_override_logic, 1)
+		self.assertEqual(doc.enable_sales_invoice_valuation_guard, 1)
+
 	def test_legacy_role_profile_controller_remains_importable_for_migration(self):
 		self.assertEqual(
 			BatchStockGuardRoleProfileAccess.__name__,
